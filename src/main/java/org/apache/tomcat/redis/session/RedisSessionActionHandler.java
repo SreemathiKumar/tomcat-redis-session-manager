@@ -8,6 +8,7 @@ import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.redis.serializer.ISerializer;
 import org.apache.tomcat.redis.store.RedisStoreManager;
 
+import java.security.Principal;
 import java.util.Arrays;
 
 /**
@@ -56,10 +57,6 @@ public class RedisSessionActionHandler {
         }
     }
 
-    private String getKey(String sessionId, int type) {
-        return StringUtils.join(Arrays.asList("session", sessionId, type), COLON);
-    }
-
     public void init() throws LifecycleException {
         this.storeManager.init();
     }
@@ -99,7 +96,7 @@ public class RedisSessionActionHandler {
         return registerSession(session);
     }
 
-    public void remove(RedisSession session, boolean update) {
+    public void removeSession(RedisSession session) {
         // TODO: DELETE the Session from Redis
     }
 
@@ -108,7 +105,41 @@ public class RedisSessionActionHandler {
         return null;
     }
 
-    public void flush() {
+    public void setSessionPrincipal(RedisSession session, Principal principal) {
         // TODO
     }
+
+    public void setSessionCreationTime(RedisSession session, Long time) {
+        // TODO
+    }
+
+    public void setSessionAuthType(RedisSession session, String authType) {
+        // TODO
+    }
+
+    public void removeSessionNote(RedisSession session, String name) {
+        // TODO
+    }
+
+    public void setSessionNote(RedisSession session, String name, Object value) {
+        // TODO
+    }
+
+    public void removeSessionAttribute(RedisSession session, String name) {
+        // TODO
+    }
+
+    public void setSessionAttribute(RedisSession session, String name, Object value) {
+        // TODO
+    }
+
+    public void flushActions() {
+        // TODO
+    }
+
+    private String getKey(String sessionId, int type) {
+        return StringUtils.join(Arrays.asList("session", sessionId, type), COLON);
+    }
+
+
 }

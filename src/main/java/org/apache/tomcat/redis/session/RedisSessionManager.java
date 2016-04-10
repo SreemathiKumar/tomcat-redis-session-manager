@@ -27,6 +27,9 @@ public class RedisSessionManager extends BaseRedisStoreManager implements Lifecy
      */
     protected RedisSessionActionHandler actionHandler;
 
+    public RedisSessionActionHandler getActionHandler() {
+        return actionHandler;
+    }
 
     @Override
     public void load() throws ClassNotFoundException, IOException {
@@ -153,7 +156,7 @@ public class RedisSessionManager extends BaseRedisStoreManager implements Lifecy
     public void remove(Session session, boolean update) {
         super.remove(session, update);
         if (session instanceof RedisSession) {
-            this.actionHandler.remove((RedisSession) session, update);
+            this.actionHandler.removeSession((RedisSession) session);
         }
     }
 
@@ -164,7 +167,7 @@ public class RedisSessionManager extends BaseRedisStoreManager implements Lifecy
     }
 
     public void postRequest() {
-        this.actionHandler.flush();
+        this.actionHandler.flushActions();
     }
 
 }
