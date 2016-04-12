@@ -9,11 +9,10 @@ import org.apache.tomcat.redis.util.StringUtils;
 import redis.clients.jedis.*;
 import redis.clients.util.Pool;
 
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class RedisStoreManager {
 
@@ -40,7 +39,7 @@ public class RedisStoreManager {
     protected Pool<Jedis> connectionPool;
     protected JedisPoolConfig connectionPoolConfig = new JedisPoolConfig();
 
-    protected ExecutorService executor = null;
+    protected ExecutorService[] executors = null;
     protected int executorPoolSize = Runtime.getRuntime().availableProcessors();
 
     public String getHost() {
@@ -87,10 +86,6 @@ public class RedisStoreManager {
         this.timeout = timeout;
     }
 
-    public String getSentinels() {
-        return sentinels;
-    }
-
     public void setSentinels(String sentinels) {
         this.sentinelSet = new LinkedHashSet<String>();
         if (sentinels != null) {
@@ -123,7 +118,13 @@ public class RedisStoreManager {
 
     public void init() throws LifecycleException {
 
-        this.executor = Executors.newFixedThreadPool(this.executorPoolSize);
+        // Need to ensure that the Commands belonging to the same session
+        // are executed serially. Hence creating multiple executors of size 1
+        // for different buckets of commands.
+        this.executors = new ExecutorService[this.executorPoolSize];
+        for(int i = 0; i<= this.executors.length; i++) {
+            this.executors[i] = Executors.newSingleThreadExecutor();
+        }
 
         try {
             this.serializer = getSerializer();
@@ -144,16 +145,39 @@ public class RedisStoreManager {
     }
 
     public void destroy() {
-        try {
-            this.executor.shutdown();
-        } catch (Exception e) {
-            // Do nothing to prevent anything untoward from happening
-        }
 
+        shutdownExecutors(); // Shutdown Executors. This ensures that no new tasks are accepted.
+        awaitTermination(2, TimeUnit.MINUTES); // Ensures previous tasks are completed. Taking 2 mins as the timeout
+
+        // After completion of all tasks, the Redis connection pool can be destroyed.
         try {
             this.connectionPool.destroy();
         } catch (Exception e) {
             // Do nothing to prevent anything untoward from happening
+        }
+    }
+
+    private void shutdownExecutors() {
+        for(int i = 0; i<= this.executors.length; i++) {
+            try {
+                if(this.executors[i] != null && !this.executors[i].isShutdown()) {
+                    this.executors[i].shutdown();
+                }
+            } catch (Exception e) {
+                // Do nothing to prevent anything untoward from happening
+            }
+        }
+    }
+
+    private void awaitTermination(long timeout, TimeUnit unit) {
+        for(int i = 0; i<= this.executors.length; i++) {
+            try {
+                if(this.executors[i] != null && !this.executors[i].isShutdown()) {
+                    this.executors[i].awaitTermination(timeout, unit);
+                }
+            } catch (Exception e) {
+                // Do nothing to prevent anything untoward from happening
+            }
         }
     }
 
@@ -172,8 +196,35 @@ public class RedisStoreManager {
     }
 
     public void execute(List<RedisCommand> commands) {
-        if(commands != null) {
-            this.executor.execute(new PersistTask(commands, this, this.serializer));
+
+        // The logic below ensures that the commands belonging to the same session are executed serially.
+        // The execution are async which ensures that the callers are not blocked for persistence.
+        if(commands != null && !commands.isEmpty()) {
+            final Map<Integer, List<RedisCommand>> orderMap = new HashMap<Integer, List<RedisCommand>>();
+            for(RedisCommand command : commands) {
+                final int hashkey = (command.getSessionId() != null ? Math.abs(command.getSessionId().hashCode()) : 0) % this.executors.length;
+                if(orderMap.get(hashkey) == null) {
+                    orderMap.put(hashkey, new ArrayList<RedisCommand>());
+                }
+                orderMap.get(hashkey).add(command);
+            }
+
+            for(Map.Entry<Integer, List<RedisCommand>> entry : orderMap.entrySet()) {
+                this.executors[entry.getKey()].execute(new PersistTask(entry.getValue(), this, this.serializer));
+            }
+        }
+    }
+
+    protected ISerializer getSerializer() throws LifecycleException {
+        try {
+            LOG.info("Instantiating serializer of type " + this.serializationStrategyClass);
+            return (ISerializer) Class.forName(this.serializationStrategyClass).newInstance();
+        } catch (ClassNotFoundException e) {
+            throw new LifecycleException(e);
+        } catch (InstantiationException e) {
+            throw new LifecycleException(e);
+        } catch (IllegalAccessException e) {
+            throw new LifecycleException(e);
         }
     }
 
@@ -192,7 +243,7 @@ public class RedisStoreManager {
 
         @Override
         public void run() {
-            if(LOG.isDebugEnabled()) { LOG.debug("RedisCommands to be executed"); }
+            if(LOG.isDebugEnabled()) { LOG.debug("Number of RedisCommands to be executed is " + commands.size()); }
 
             final Jedis jedis = this.storeManager.acquireConnection();
             try {
@@ -226,19 +277,6 @@ public class RedisStoreManager {
             } catch (Exception e) {
                 LOG.error("Error executing RedisCommand " + command, e);
             }
-        }
-    }
-
-    protected ISerializer getSerializer() throws LifecycleException {
-        try {
-            LOG.info("Instantiating serializer of type " + this.serializationStrategyClass);
-            return (ISerializer) Class.forName(this.serializationStrategyClass).newInstance();
-        } catch (ClassNotFoundException e) {
-            throw new LifecycleException(e);
-        } catch (InstantiationException e) {
-            throw new LifecycleException(e);
-        } catch (IllegalAccessException e) {
-            throw new LifecycleException(e);
         }
     }
 }

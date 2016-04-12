@@ -12,11 +12,20 @@ public class RedisCommand {
         EXPIRY
     }
 
+    private final String sessionId;
     private Command command;
     private String key;
     private String field;
     private Serializable value;
     private int expiryInterval;
+
+    public RedisCommand(String sessionId) {
+        this.sessionId = sessionId;
+    }
+
+    public String getSessionId() {
+        return sessionId;
+    }
 
     public Command getCommand() {
         return command;

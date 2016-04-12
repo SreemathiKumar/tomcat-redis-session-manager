@@ -11,6 +11,9 @@ import redis.clients.jedis.Jedis;
 
 import java.io.Serializable;
 import java.util.*;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Handler for all Redis session actions.
@@ -38,10 +41,12 @@ public class RedisSessionActionHandler {
     private static final String CTIME = "ctime";
 
     /**
-     * Current Session Placeholder for web-request thread.
+     * Redis Command Registry
      */
-    protected final ThreadLocal<List<RedisCommand>> COMMAND_REGISTER = new ThreadLocal<List<RedisCommand>>();
-    protected final ThreadLocal<Set<String>> SESSION_ID_REGISTER = new ThreadLocal<Set<String>>();
+    protected final Queue<RedisCommand> registry;
+    protected final int maxRegistrySize;
+    protected final Lock lock;
+
 
     /**
      * Redis Store Manager
@@ -53,9 +58,12 @@ public class RedisSessionActionHandler {
      */
     protected final int maxInactiveInterval;
 
-    public RedisSessionActionHandler(final RedisStoreManager storeManager, final int maxInactiveInterval) throws LifecycleException {
+    public RedisSessionActionHandler(final RedisStoreManager storeManager, final int maxInactiveInterval, final int maxRegistrySize) throws LifecycleException {
         this.storeManager = storeManager;
         this.maxInactiveInterval = maxInactiveInterval;
+        this.registry = new ConcurrentLinkedQueue<RedisCommand>();
+        this.lock = new ReentrantLock();
+        this.maxRegistrySize = maxRegistrySize;
     }
 
     /**
@@ -65,6 +73,10 @@ public class RedisSessionActionHandler {
      * @return requestedSessionId if the session did not exist. Else null if the session with the id already exists.
      */
     public String regsisterSessionId(String requestedSessionId, boolean overwrite) {
+        if(requestedSessionId == null) {
+            return null;
+        }
+
         final String key = getKey(requestedSessionId, MAIN);
 
         // This has to be synchronous call
@@ -83,9 +95,7 @@ public class RedisSessionActionHandler {
     }
 
     public void registerSessionPrincipal(RedisSession session) {
-        registerSessionAccess(session.getId());
-
-        registerCommand(new RedisCommand()
+        registerCommand(new RedisCommand(session.getId())
                 .setCommand(session.getPrincipal() == null ? Command.HDEL : Command.HSET)
                 .setKey(getKey(session.getId(), MAIN))
                 .setField(PRINCIPAL)
@@ -93,9 +103,7 @@ public class RedisSessionActionHandler {
     }
 
     public void registerSessionCreationTime(RedisSession session) {
-        registerSessionAccess(session.getId());
-
-        registerCommand(new RedisCommand()
+        registerCommand(new RedisCommand(session.getId())
                 .setCommand(Command.HSET)
                 .setKey(getKey(session.getId(), MAIN))
                 .setField(CTIME)
@@ -103,9 +111,7 @@ public class RedisSessionActionHandler {
     }
 
     public void registerSessionAuthType(RedisSession session) {
-        registerSessionAccess(session.getId());
-
-        registerCommand(new RedisCommand()
+        registerCommand(new RedisCommand(session.getId())
                 .setCommand(session.getAuthType() == null ? Command.HDEL : Command.HSET)
                 .setKey(getKey(session.getId(), MAIN))
                 .setField(AUTH_TYPE)
@@ -113,18 +119,14 @@ public class RedisSessionActionHandler {
     }
 
     public void removeSessionNote(RedisSession session, String name) {
-        registerSessionAccess(session.getId());
-
-        registerCommand(new RedisCommand()
+        registerCommand(new RedisCommand(session.getId())
                 .setCommand(Command.HDEL)
                 .setKey(getKey(session.getId(), NOTES))
                 .setField(name));
     }
 
     public void registerSessionNote(RedisSession session, String name, Object value) {
-        registerSessionAccess(session.getId());
-
-        registerCommand(new RedisCommand()
+        registerCommand(new RedisCommand(session.getId())
                 .setCommand(value == null ? Command.HDEL : Command.HSET)
                 .setKey(getKey(session.getId(), NOTES))
                 .setField(name)
@@ -132,18 +134,14 @@ public class RedisSessionActionHandler {
     }
 
     public void removeSessionAttribute(RedisSession session, String name) {
-        registerSessionAccess(session.getId());
-
-        registerCommand(new RedisCommand()
+        registerCommand(new RedisCommand(session.getId())
                 .setCommand(Command.HDEL)
                 .setKey(getKey(session.getId(), ATTRIBUTES))
                 .setField(name));
     }
 
     public void registerSessionAttribute(RedisSession session, String name, Object value) {
-        registerSessionAccess(session.getId());
-
-        registerCommand(new RedisCommand()
+        registerCommand(new RedisCommand(session.getId())
                 .setCommand(value == null ? Command.HDEL : Command.HSET)
                 .setKey(getKey(session.getId(), ATTRIBUTES))
                 .setField(name)
@@ -151,16 +149,15 @@ public class RedisSessionActionHandler {
     }
 
     public void removeSession(RedisSession session) {
-        registerSessionDelete(session.getId());
-
         for(String keyType : SESSION_BUCKETS) {
-            registerCommand(new RedisCommand().setCommand(Command.DEL).setKey(getKey(session.getId(), keyType)));
+            registerCommand(new RedisCommand(session.getId()).setCommand(Command.DEL).setKey(getKey(session.getId(), keyType)));
         }
     }
 
     public Session addSession(RedisSession session) {
         if(session.getId() != null) {
             regsisterSessionId(session.getId(), true);
+            registerSessionAccess(session.getId());
             registerSessionPrincipal(session);
             registerSessionCreationTime(session);
             registerSessionAuthType(session);
@@ -189,57 +186,38 @@ public class RedisSessionActionHandler {
         return null;
     }
 
+    /**
+     * Attempts to flush the actions in memory.
+     * Will be successful if it was able to get hold of a lock.
+     */
     public void flushActions() {
         if(LOG.isDebugEnabled()) { LOG.debug("Attempting to flush all redis actions "); }
-        final List<RedisCommand> commands = new ArrayList<RedisCommand>(COMMAND_REGISTER.get());
 
-        // The session hash buckets needs to be set with the expiry.
-        if(SESSION_ID_REGISTER.get() != null) {
-            for(String sessionId : SESSION_ID_REGISTER.get()) {
-                for(String keyType : SESSION_BUCKETS) {
-                    commands.add(new RedisCommand().setCommand(Command.EXPIRY).setKey(getKey(sessionId, keyType)).setExpiryInterval(this.maxInactiveInterval));
+        if(this.lock.tryLock()) {
+            try {
+                final List<RedisCommand> commands = new ArrayList<RedisCommand>(this.registry.size());
+                while(!this.registry.isEmpty()) {
+                    commands.add(this.registry.poll());
                 }
+                this.storeManager.execute(commands);
+            } finally {
+                this.lock.unlock();
             }
         }
-        try {
-            this.storeManager.execute(commands);
-        } finally {
-            clear();
-        }
-
     }
 
     protected void registerCommand(RedisCommand command) {
-        if(COMMAND_REGISTER.get() == null) {
-            COMMAND_REGISTER.set(new ArrayList<RedisCommand>());
-        }
+        this.registry.offer(command);
 
-        COMMAND_REGISTER.get().add(command);
+        if(this.registry.size() > this.maxRegistrySize) {
+            flushActions();
+        }
     }
 
     protected void registerSessionAccess(final String sessionId) {
-        if(SESSION_ID_REGISTER.get() == null) {
-            SESSION_ID_REGISTER.set(new HashSet<String>());
+        for(String keyType : SESSION_BUCKETS) {
+            this.registry.add(new RedisCommand(sessionId).setCommand(Command.EXPIRY).setKey(getKey(sessionId, keyType)).setExpiryInterval(this.maxInactiveInterval));
         }
-
-        if(StringUtils.hasLength(sessionId)) {
-            SESSION_ID_REGISTER.get().add(sessionId);
-        }
-    }
-
-    protected void registerSessionDelete(final String sessionId) {
-        if(SESSION_ID_REGISTER.get() == null) {
-            SESSION_ID_REGISTER.set(new HashSet<String>());
-        }
-
-        if(StringUtils.hasLength(sessionId)) {
-            SESSION_ID_REGISTER.get().remove(sessionId);
-        }
-    }
-
-    private void clear() {
-        COMMAND_REGISTER.remove();
-        SESSION_ID_REGISTER.remove();
     }
 
     private String getKey(String sessionId, String bucketType) {

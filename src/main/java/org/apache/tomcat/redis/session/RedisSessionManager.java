@@ -74,7 +74,7 @@ public class RedisSessionManager extends BaseRedisSessionManager implements Life
     }
 
     protected synchronized void attachRedisActionHandler() throws LifecycleException {
-        this.actionHandler = new RedisSessionActionHandler(getStoreManager(), getMaxInactiveInterval());
+        this.actionHandler = new RedisSessionActionHandler(getStoreManager(), getMaxInactiveInterval(), this.maxRegistrySize);
     }
 
     @Override
@@ -95,6 +95,7 @@ public class RedisSessionManager extends BaseRedisSessionManager implements Life
 
         LOG.info("Stopping " + name);
 
+        this.actionHandler.flushActions();
         super.stopInternal();
     }
 
@@ -169,6 +170,12 @@ public class RedisSessionManager extends BaseRedisSessionManager implements Life
         if(LOG.isDebugEnabled()) { LOG.debug("Attempting to find session with id " + id); }
         final Session session = super.findSession(id);
         return (session instanceof RedisSession) ? session : this.actionHandler.loadSession(id);
+    }
+
+    @Override
+    public void backgroundProcess() {
+        super.backgroundProcess();
+        this.actionHandler.flushActions();
     }
 
     public void postRequest() {

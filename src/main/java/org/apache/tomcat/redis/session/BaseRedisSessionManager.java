@@ -31,6 +31,15 @@ abstract class BaseRedisSessionManager extends ManagerBase {
     }
 
     /**
+     * Maximum Redis Commands to keep in memory
+     */
+    protected int maxRegistrySize = 100;
+
+    public void setMaxRegistrySize(int maxRegistrySize) {
+        this.maxRegistrySize = maxRegistrySize;
+    }
+
+    /**
      * Redis Store Manager
      */
     private RedisStoreManager storeManager = new RedisStoreManager();
