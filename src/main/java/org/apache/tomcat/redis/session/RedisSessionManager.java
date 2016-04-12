@@ -10,7 +10,9 @@ public class RedisSessionManager extends BaseRedisStoreManager implements Lifecy
 
     private static final Log LOG = LogFactory.getLog(RedisSessionManager.class);
 
+    protected static final String info = "RedisSessionManager/1.0";
     protected static String name = "RedisSessionManager";
+
     protected String serializationStrategyClass = "org.apache.tomcat.redis.serializer.JavaSerializer";
 
     public void setSerializationStrategyClass(String strategy) {
@@ -29,6 +31,16 @@ public class RedisSessionManager extends BaseRedisStoreManager implements Lifecy
 
     public RedisSessionActionHandler getActionHandler() {
         return actionHandler;
+    }
+
+    @Override
+    public String getInfo() {
+        return (info);
+    }
+
+    @Override
+    public String getName() {
+        return (name);
     }
 
     @Override
@@ -76,7 +88,7 @@ public class RedisSessionManager extends BaseRedisStoreManager implements Lifecy
     protected synchronized void startInternal() throws LifecycleException {
         super.startInternal();
 
-        LOG.info("Starting " + getClassName());
+        LOG.info("Starting " + name);
         LOG.info("Expiry set as " + getMaxInactiveInterval() + " seconds");
 
         setState(LifecycleState.STARTING);
@@ -88,7 +100,7 @@ public class RedisSessionManager extends BaseRedisStoreManager implements Lifecy
     protected synchronized void stopInternal() throws LifecycleException {
         setState(LifecycleState.STOPPING);
 
-        LOG.info("Stopping " + getClassName());
+        LOG.info("Stopping " + name);
         this.actionHandler.destroy();
 
         super.stopInternal();
@@ -104,43 +116,42 @@ public class RedisSessionManager extends BaseRedisStoreManager implements Lifecy
     }
 
     private String _registerSessionId(String requestedSessionId) {
-        return (requestedSessionId != null) ? this.actionHandler.regsisterSessionId(getCompletedSessionId(requestedSessionId)) : null;
+        return (requestedSessionId != null) ? this.actionHandler.regsisterSessionId(getCompletedSessionId(requestedSessionId), false) : null;
     }
 
     @Override
     protected String generateSessionId() {
-        String key = null;
+        String key;
         do {
             key = _registerSessionId(super.generateSessionId());
         } while (key == null);
+
+        if(LOG.isDebugEnabled()) { LOG.debug("Generated session Id " + key); }
 
         return key;
     }
 
     @Override
     public Session createEmptySession() {
-        return this.actionHandler.registerSession(new RedisSession(this));
+        return new RedisSession(this);
     }
 
     @Override
     public Session createSession(String requestedSessionId) {
-        final String sessionId = _registerSessionId(requestedSessionId); // Register session first in Redis before creating the session
 
-        if (sessionId != null) {
-            final RedisSession session = (RedisSession) createEmptySession();
-            session.setNew(true);
-            session.setValid(true);
-            session.setCreationTime(System.currentTimeMillis());
-            session.setMaxInactiveInterval(getMaxInactiveInterval());
-            session.setId(sessionId);
-            session.tellNew();
-            return this.actionHandler.registerSession(session);
+        if(LOG.isDebugEnabled()) { LOG.debug("Attempting to create Session with Id " + requestedSessionId); }
+        final Session session = super.createSession(requestedSessionId);
+
+        if (session != null && session instanceof  RedisSession) {
+            if(LOG.isDebugEnabled()) { LOG.debug("Created Session with Id " + requestedSessionId); }
+            return this.actionHandler.addSession((RedisSession) session);
         }
-        return null;
+        return session;
     }
 
     @Override
     public void add(Session session) {
+        if(LOG.isDebugEnabled()) { LOG.debug("Attempting to add session with id " + session.getId()); }
         super.add(session);
         if (session instanceof RedisSession) {
             this.actionHandler.addSession((RedisSession) session);
@@ -154,6 +165,7 @@ public class RedisSessionManager extends BaseRedisStoreManager implements Lifecy
 
     @Override
     public void remove(Session session, boolean update) {
+        if(LOG.isDebugEnabled()) { LOG.debug("Attempting to remove session with id " + session.getId()); }
         super.remove(session, update);
         if (session instanceof RedisSession) {
             this.actionHandler.removeSession((RedisSession) session);
@@ -162,8 +174,9 @@ public class RedisSessionManager extends BaseRedisStoreManager implements Lifecy
 
     @Override
     public Session findSession(String id) throws IOException {
+        if(LOG.isDebugEnabled()) { LOG.debug("Attempting to find session with id " + id); }
         final Session session = super.findSession(id);
-        return session != null ? session : this.actionHandler.loadSession(id);
+        return (session instanceof RedisSession) ? session : this.actionHandler.loadSession(id);
     }
 
     public void postRequest() {

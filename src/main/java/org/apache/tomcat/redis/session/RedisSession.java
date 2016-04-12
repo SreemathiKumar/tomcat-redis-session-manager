@@ -32,21 +32,21 @@ class RedisSession extends StandardSession {
   public void setPrincipal(Principal principal) {
     super.setPrincipal(principal);
 
-    this.actionHandler.setSessionPrincipal(this, principal);
+    this.actionHandler.registerSessionPrincipal(this);
   }
 
   @Override
   public void setCreationTime(long time) {
     super.setCreationTime(time);
 
-    this.actionHandler.setSessionCreationTime(this, time);
+    this.actionHandler.registerSessionCreationTime(this);
   }
 
   @Override
   public void setAuthType(String authType) {
     super.setAuthType(authType);
 
-    this.actionHandler.setSessionAuthType(this, authType);
+    this.actionHandler.registerSessionAuthType(this);
   }
 
   @Override
@@ -60,7 +60,7 @@ class RedisSession extends StandardSession {
   public void setNote(String name, Object value) {
     super.setNote(name, value);
 
-    this.actionHandler.setSessionNote(this, name, value);
+    this.actionHandler.registerSessionNote(this, name, value);
   }
 
   @Override
@@ -74,7 +74,7 @@ class RedisSession extends StandardSession {
   public void setAttribute(String name, Object value, boolean notify) {
     super.setAttribute(name, value, notify);
 
-    this.actionHandler.setSessionAttribute(this, name, value);
+    this.actionHandler.registerSessionAttribute(this, name, value);
   }
 
   @Override

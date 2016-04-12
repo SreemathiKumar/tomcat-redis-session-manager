@@ -1,16 +1,22 @@
 package org.apache.tomcat.redis.store;
 
-import com.sun.deploy.util.StringUtils;
 import org.apache.catalina.LifecycleException;
+import org.apache.juli.logging.Log;
+import org.apache.juli.logging.LogFactory;
+import org.apache.tomcat.redis.session.RedisCommand;
+import org.apache.tomcat.redis.util.StringUtils;
 import redis.clients.jedis.*;
 import redis.clients.util.Pool;
 
-import java.util.*;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 public class RedisStoreManager {
 
+    private static final Log LOG = LogFactory.getLog(RedisStoreManager.class);
+
     private static final String COMMA = ",";
-    protected String NULL = "null";
 
     protected String host = "localhost";
     protected int port = 6379;
@@ -24,7 +30,6 @@ public class RedisStoreManager {
 
     protected Pool<Jedis> connectionPool;
     protected JedisPoolConfig connectionPoolConfig = new JedisPoolConfig();
-
 
     public String getHost() {
         return host;
@@ -121,7 +126,7 @@ public class RedisStoreManager {
         }
     }
 
-    protected Jedis acquireConnection() {
+    public Jedis acquireConnection() {
         final Jedis jedis = connectionPool.getResource();
 
         if (getDatabase() != 0) {
@@ -131,100 +136,20 @@ public class RedisStoreManager {
         return jedis;
     }
 
-    protected void returnConnection(Jedis jedis) {
+    public void returnConnection(Jedis jedis) {
         jedis.close();
     }
 
-    /**
-     * Delete all the keys of the currently selected DB. This command never fails.
-     * @return Status code reply
-     */
-    public void flushDB() {
-        final Jedis jedis = acquireConnection();
-        try {
-            jedis.flushDB();
-        } finally {
-            returnConnection(jedis);
+    public void execute(List<RedisCommand> commands) {
+        if(LOG.isDebugEnabled()) {
+            LOG.debug("RedisCommands to be executed");
+            if(commands != null) {
+                for(RedisCommand command : commands) {
+                    LOG.info(command.toString());
+                }
+            }
         }
-    }
 
-    public int getSize() {
-        final Jedis jedis = acquireConnection();
-        try {
-            return jedis.dbSize().intValue();
-        } finally {
-            returnConnection(jedis);
-        }
-    }
-
-    public Set<String> keys() {
-        return keys(null);
-    }
-
-    public Set<String> keys(String pattern) {
-        pattern = pattern != null ? pattern : "*";
-        final Jedis jedis = acquireConnection();
-        try {
-            return jedis.keys(pattern);
-        } finally {
-            returnConnection(jedis);
-        }
-    }
-
-    /**
-     * Test if the specified key exists. The command returns "1" if the key exists, otherwise "0" is
-     * returned. Note that even keys set with an empty string as value will return "1". Time
-     * complexity: O(1)
-     *
-     * @param key
-     * @return Boolean reply, true if the key exists, otherwise false
-     */
-    public boolean exists(String key) {
-        final Jedis jedis = acquireConnection();
-        try {
-            return jedis.exists(key);
-        } finally {
-            returnConnection(jedis);
-        }
-    }
-
-    /**
-     * Set the string value as value of the key. The string can't be longer than 1073741824 bytes (1
-     * GB).
-     * <p/>
-     * Time complexity: O(1)
-     *
-     * @param key
-     * @param value
-     * @return Status code reply
-     */
-    public String set(final String key, final String value) {
-        final Jedis jedis = acquireConnection();
-        try {
-            return jedis.set(key, value != null ? value : NULL);
-        } finally {
-            // TODO: Consider expiration
-            returnConnection(jedis);
-        }
-    }
-
-    /**
-     * SETNX works exactly like {@link #set(String, String) SET} with the only difference that if the
-     * key already exists no operation is performed. SETNX actually means "SET if Not eXists".
-     * <p/>
-     * Time complexity: O(1)
-     *
-     * @param key
-     * @param value
-     * @return Integer reply, specifically: 1 if the key was set 0 if the key was not set
-     */
-    public Long setnx(final String key, final String value) {
-        final Jedis jedis = acquireConnection();
-        try {
-            return jedis.setnx(key, value != null ? value : NULL);
-        } finally {
-            // TODO: Consider expiration
-            returnConnection(jedis);
-        }
+        // TODO: Execute the commands in Redis DB
     }
 }
