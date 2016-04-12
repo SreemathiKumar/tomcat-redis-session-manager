@@ -8,7 +8,8 @@ import java.io.Serializable;
 public class RedisCommand {
     enum Command {
         HSET, HGET, HDEL,
-        DEL, SET
+        DEL, SET,
+        EXPIRY
     }
 
     private Command command;

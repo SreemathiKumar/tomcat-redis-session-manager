@@ -19,10 +19,6 @@ import java.util.*;
 public class RedisSessionActionHandler {
     private static final Log LOG = LogFactory.getLog(RedisSessionActionHandler.class);
 
-    private static final int SESSION_MAIN = 0;
-    private static final int SESSION_ATTRIBUTES = 2;
-    private static final int SESSION_NOTES = 3;
-
     /**
      * Session keys
      */
@@ -31,6 +27,8 @@ public class RedisSessionActionHandler {
     private static final String NOTES = "notes";
     private static final String ATTRIBUTES = "attributes";
     private static final String COLON = ":";
+
+    private static final List<String> SESSION_BUCKETS = Arrays.asList(MAIN, NOTES, ATTRIBUTES);
 
     /**
      * Session main map keys
@@ -43,7 +41,8 @@ public class RedisSessionActionHandler {
     /**
      * Current Session Placeholder for web-request thread.
      */
-    protected ThreadLocal<List<RedisCommand>> COMMAND_REGISTER = new ThreadLocal<List<RedisCommand>>();
+    protected final ThreadLocal<List<RedisCommand>> COMMAND_REGISTER = new ThreadLocal<List<RedisCommand>>();
+    protected final ThreadLocal<Set<String>> SESSION_ID_REGISTER = new ThreadLocal<Set<String>>();
 
     /**
      * Serializer initialization
@@ -79,6 +78,8 @@ public class RedisSessionActionHandler {
 
     public void destroy() {
         try {
+            clear();
+
             this.storeManager.destroy();
         } catch (Exception e) {
             // Do nothing to prevent anything untoward from happening
@@ -92,7 +93,7 @@ public class RedisSessionActionHandler {
      * @return requestedSessionId if the session did not exist. Else null if the session with the id already exists.
      */
     public String regsisterSessionId(String requestedSessionId, boolean overwrite) {
-        final String key = getKey(requestedSessionId, SESSION_MAIN);
+        final String key = getKey(requestedSessionId, MAIN);
 
         // This has to be synchronous call
         // Hence getting Jedis instance and operating on it.
@@ -104,70 +105,85 @@ public class RedisSessionActionHandler {
             }
             return jedis.hsetnx(key, ID, requestedSessionId) == 0L ? null : requestedSessionId;
         } finally {
+            registerSessionAccess(requestedSessionId);
             this.storeManager.returnConnection(jedis);
         }
     }
 
     public void registerSessionPrincipal(RedisSession session) {
+        registerSessionAccess(session.getId());
+
         registerCommand(new RedisCommand()
                 .setCommand(session.getPrincipal() == null ? Command.HDEL : Command.HSET)
-                .setKey(getKey(session.getId(), SESSION_MAIN))
+                .setKey(getKey(session.getId(), MAIN))
                 .setField(PRINCIPAL)
                 .setValue((Serializable) session.getPrincipal()));
     }
 
     public void registerSessionCreationTime(RedisSession session) {
+        registerSessionAccess(session.getId());
+
         registerCommand(new RedisCommand()
                 .setCommand(Command.HSET)
-                .setKey(getKey(session.getId(), SESSION_MAIN))
+                .setKey(getKey(session.getId(), MAIN))
                 .setField(CTIME)
                 .setValue(session.getCreationTime()));
     }
 
     public void registerSessionAuthType(RedisSession session) {
+        registerSessionAccess(session.getId());
+
         registerCommand(new RedisCommand()
                 .setCommand(session.getAuthType() == null ? Command.HDEL : Command.HSET)
-                .setKey(getKey(session.getId(), SESSION_MAIN))
+                .setKey(getKey(session.getId(), MAIN))
                 .setField(AUTH_TYPE)
                 .setValue(session.getAuthType()));
     }
 
     public void removeSessionNote(RedisSession session, String name) {
+        registerSessionAccess(session.getId());
+
         registerCommand(new RedisCommand()
                 .setCommand(Command.HDEL)
-                .setKey(getKey(session.getId(), SESSION_NOTES))
+                .setKey(getKey(session.getId(), NOTES))
                 .setField(name));
     }
 
     public void registerSessionNote(RedisSession session, String name, Object value) {
+        registerSessionAccess(session.getId());
+
         registerCommand(new RedisCommand()
                 .setCommand(value == null ? Command.HDEL : Command.HSET)
-                .setKey(getKey(session.getId(), SESSION_NOTES))
+                .setKey(getKey(session.getId(), NOTES))
                 .setField(name)
                 .setValue((Serializable) value));
     }
 
     public void removeSessionAttribute(RedisSession session, String name) {
+        registerSessionAccess(session.getId());
+
         registerCommand(new RedisCommand()
                 .setCommand(Command.HDEL)
-                .setKey(getKey(session.getId(), SESSION_ATTRIBUTES))
+                .setKey(getKey(session.getId(), ATTRIBUTES))
                 .setField(name));
     }
 
     public void registerSessionAttribute(RedisSession session, String name, Object value) {
+        registerSessionAccess(session.getId());
+
         registerCommand(new RedisCommand()
                 .setCommand(value == null ? Command.HDEL : Command.HSET)
-                .setKey(getKey(session.getId(), SESSION_ATTRIBUTES))
+                .setKey(getKey(session.getId(), ATTRIBUTES))
                 .setField(name)
                 .setValue((Serializable) value));
     }
 
     public void removeSession(RedisSession session) {
-        registerCommands(Arrays.asList(
-                new RedisCommand().setCommand(Command.DEL).setKey(getKey(session.getId(), SESSION_MAIN)),
-                new RedisCommand().setCommand(Command.DEL).setKey(getKey(session.getId(), SESSION_NOTES)),
-                new RedisCommand().setCommand(Command.DEL).setKey(getKey(session.getId(), SESSION_ATTRIBUTES))
-        ));
+        registerSessionDelete(session.getId());
+
+        for(String keyType : SESSION_BUCKETS) {
+            registerCommand(new RedisCommand().setCommand(Command.DEL).setKey(getKey(session.getId(), keyType)));
+        }
     }
 
     public Session addSession(RedisSession session) {
@@ -194,38 +210,65 @@ public class RedisSessionActionHandler {
     }
 
     public Session loadSession(String sessionId) {
+        registerSessionAccess(sessionId);
         // TODO:
         return null;
     }
 
     public void flushActions() {
         if(LOG.isDebugEnabled()) { LOG.debug("Attempting to flush all redis actions "); }
-        this.storeManager.execute(COMMAND_REGISTER.get());
-        COMMAND_REGISTER.set(new ArrayList<RedisCommand>()); // RESET the command registry
+        final List<RedisCommand> commands = new ArrayList<RedisCommand>(COMMAND_REGISTER.get());
+
+        // The session hash buckets needs to be set with the expiry.
+        if(SESSION_ID_REGISTER.get() != null) {
+            for(String sessionId : SESSION_ID_REGISTER.get()) {
+                for(String keyType : SESSION_BUCKETS) {
+                    commands.add(new RedisCommand().setCommand(Command.EXPIRY).setKey(getKey(sessionId, keyType)));
+                }
+            }
+        }
+        try {
+            this.storeManager.execute(commands);
+        } finally {
+            clear();
+        }
+
     }
 
     protected void registerCommand(RedisCommand command) {
-        registerCommands(Collections.singletonList(command));
-    }
-
-    protected void registerCommands(List<RedisCommand> commands) {
         if(COMMAND_REGISTER.get() == null) {
             COMMAND_REGISTER.set(new ArrayList<RedisCommand>());
         }
 
-        COMMAND_REGISTER.get().addAll(commands);
+        COMMAND_REGISTER.get().add(command);
     }
 
-    private String getKey(String sessionId, int type) {
-        switch (type) {
-            case SESSION_MAIN:
-                return StringUtils.join(Arrays.asList(SESSION, MAIN, sessionId), COLON);
-            case SESSION_ATTRIBUTES:
-                return StringUtils.join(Arrays.asList(SESSION, ATTRIBUTES, sessionId), COLON);
-            case SESSION_NOTES:
-                return StringUtils.join(Arrays.asList(SESSION, NOTES, sessionId), COLON);
+    protected void registerSessionAccess(final String sessionId) {
+        if(SESSION_ID_REGISTER.get() == null) {
+            SESSION_ID_REGISTER.set(new HashSet<String>());
         }
 
-        return null;
+        if(StringUtils.hasLength(sessionId)) {
+            SESSION_ID_REGISTER.get().add(sessionId);
+        }
+    }
+
+    protected void registerSessionDelete(final String sessionId) {
+        if(SESSION_ID_REGISTER.get() == null) {
+            SESSION_ID_REGISTER.set(new HashSet<String>());
+        }
+
+        if(StringUtils.hasLength(sessionId)) {
+            SESSION_ID_REGISTER.get().remove(sessionId);
+        }
+    }
+
+    private void clear() {
+        COMMAND_REGISTER.remove();
+        SESSION_ID_REGISTER.remove();
+    }
+
+    private String getKey(String sessionId, String bucketType) {
+        return (SESSION_BUCKETS.contains(bucketType)) ?  StringUtils.join(Arrays.asList(SESSION, bucketType, sessionId), COLON) : null;
     }
 }
