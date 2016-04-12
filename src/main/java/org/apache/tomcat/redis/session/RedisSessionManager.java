@@ -6,18 +6,12 @@ import org.apache.juli.logging.LogFactory;
 
 import java.io.IOException;
 
-public class RedisSessionManager extends BaseRedisStoreManager implements Lifecycle {
+public class RedisSessionManager extends BaseRedisSessionManager implements Lifecycle {
 
     private static final Log LOG = LogFactory.getLog(RedisSessionManager.class);
 
     protected static final String info = "RedisSessionManager/1.0";
     protected static String name = "RedisSessionManager";
-
-    protected String serializationStrategyClass = "org.apache.tomcat.redis.serializer.JavaSerializer";
-
-    public void setSerializationStrategyClass(String strategy) {
-        this.serializationStrategyClass = strategy;
-    }
 
     /**
      * Session Handler Valve for callbacks
@@ -80,8 +74,7 @@ public class RedisSessionManager extends BaseRedisStoreManager implements Lifecy
     }
 
     protected synchronized void attachRedisActionHandler() throws LifecycleException {
-        this.actionHandler = new RedisSessionActionHandler(serializationStrategyClass, getStoreManager());
-        this.actionHandler.init();
+        this.actionHandler = new RedisSessionActionHandler(getStoreManager(), getMaxInactiveInterval());
     }
 
     @Override
@@ -101,7 +94,6 @@ public class RedisSessionManager extends BaseRedisStoreManager implements Lifecy
         setState(LifecycleState.STOPPING);
 
         LOG.info("Stopping " + name);
-        this.actionHandler.destroy();
 
         super.stopInternal();
     }

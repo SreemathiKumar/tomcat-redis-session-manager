@@ -1,8 +1,8 @@
 package org.apache.tomcat.redis.session;
 
-import org.apache.catalina.Manager;
 import org.apache.catalina.session.StandardSession;
 
+import java.io.Serializable;
 import java.security.Principal;
 
 
@@ -30,6 +30,8 @@ class RedisSession extends StandardSession {
 
   @Override
   public void setPrincipal(Principal principal) {
+    assertSerializable(principal);
+
     super.setPrincipal(principal);
 
     this.actionHandler.registerSessionPrincipal(this);
@@ -58,6 +60,8 @@ class RedisSession extends StandardSession {
 
   @Override
   public void setNote(String name, Object value) {
+    assertSerializable(value);
+
     super.setNote(name, value);
 
     this.actionHandler.registerSessionNote(this, name, value);
@@ -72,6 +76,8 @@ class RedisSession extends StandardSession {
 
   @Override
   public void setAttribute(String name, Object value, boolean notify) {
+    assertSerializable(value);
+
     super.setAttribute(name, value, notify);
 
     this.actionHandler.registerSessionAttribute(this, name, value);
@@ -80,6 +86,12 @@ class RedisSession extends StandardSession {
   @Override
   public String toString() {
     return "RedisSession[" + id + "]";
+  }
+
+  private void assertSerializable(Object obj) {
+    if (obj != null && !(obj instanceof Serializable)) {
+      throw new IllegalArgumentException("Value registered in session has to be serializable and so should implement java.io.Serialiable.");
+    }
   }
 
 }

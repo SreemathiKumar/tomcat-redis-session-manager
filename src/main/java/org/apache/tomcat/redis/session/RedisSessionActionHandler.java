@@ -4,7 +4,6 @@ import org.apache.catalina.LifecycleException;
 import org.apache.catalina.Session;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
-import org.apache.tomcat.redis.serializer.ISerializer;
 import org.apache.tomcat.redis.session.RedisCommand.Command;
 import org.apache.tomcat.redis.store.RedisStoreManager;
 import org.apache.tomcat.redis.util.StringUtils;
@@ -45,45 +44,18 @@ public class RedisSessionActionHandler {
     protected final ThreadLocal<Set<String>> SESSION_ID_REGISTER = new ThreadLocal<Set<String>>();
 
     /**
-     * Serializer initialization
-     */
-    protected final ISerializer serializer;
-
-    /**
      * Redis Store Manager
      */
     protected final RedisStoreManager storeManager;
 
-    public RedisSessionActionHandler(final String serializationStrategyClass, RedisStoreManager storeManager) throws LifecycleException {
-        this.serializer = getSerializer(serializationStrategyClass);
+    /**
+     * the default maximum inactive interval (in seconds) for Sessions created by the Manager.
+     */
+    protected final int maxInactiveInterval;
+
+    public RedisSessionActionHandler(final RedisStoreManager storeManager, final int maxInactiveInterval) throws LifecycleException {
         this.storeManager = storeManager;
-    }
-
-    protected ISerializer getSerializer(final String serializationStrategyClass) throws LifecycleException {
-        try {
-            LOG.info("Instantiating serializer of type " + serializationStrategyClass);
-            return (ISerializer) Class.forName(serializationStrategyClass).newInstance();
-        } catch (ClassNotFoundException e) {
-            throw new LifecycleException(e);
-        } catch (InstantiationException e) {
-            throw new LifecycleException(e);
-        } catch (IllegalAccessException e) {
-            throw new LifecycleException(e);
-        }
-    }
-
-    public void init() throws LifecycleException {
-        this.storeManager.init();
-    }
-
-    public void destroy() {
-        try {
-            clear();
-
-            this.storeManager.destroy();
-        } catch (Exception e) {
-            // Do nothing to prevent anything untoward from happening
-        }
+        this.maxInactiveInterval = maxInactiveInterval;
     }
 
     /**
@@ -187,23 +159,25 @@ public class RedisSessionActionHandler {
     }
 
     public Session addSession(RedisSession session) {
-        regsisterSessionId(session.getId(), true);
-        registerSessionPrincipal(session);
-        registerSessionCreationTime(session);
-        registerSessionAuthType(session);
+        if(session.getId() != null) {
+            regsisterSessionId(session.getId(), true);
+            registerSessionPrincipal(session);
+            registerSessionCreationTime(session);
+            registerSessionAuthType(session);
 
-        Iterator<String> notesIter = session.getNoteNames();
-        while (notesIter.hasNext()) {
-            final String note = notesIter.next();
-            final Object value = session.getNote(note);
-            registerSessionNote(session, note, value);
-        }
+            Iterator<String> notesIter = session.getNoteNames();
+            while (notesIter.hasNext()) {
+                final String note = notesIter.next();
+                final Object value = session.getNote(note);
+                registerSessionNote(session, note, value);
+            }
 
-        final Enumeration<String> attributes = session.getAttributeNames();
-        while (attributes.hasMoreElements()) {
-            final String attribute = attributes.nextElement();
-            final Object value = session.getAttribute(attribute);
-            registerSessionAttribute(session, attribute, value);
+            final Enumeration<String> attributes = session.getAttributeNames();
+            while (attributes.hasMoreElements()) {
+                final String attribute = attributes.nextElement();
+                final Object value = session.getAttribute(attribute);
+                registerSessionAttribute(session, attribute, value);
+            }
         }
 
         return session;
@@ -223,7 +197,7 @@ public class RedisSessionActionHandler {
         if(SESSION_ID_REGISTER.get() != null) {
             for(String sessionId : SESSION_ID_REGISTER.get()) {
                 for(String keyType : SESSION_BUCKETS) {
-                    commands.add(new RedisCommand().setCommand(Command.EXPIRY).setKey(getKey(sessionId, keyType)));
+                    commands.add(new RedisCommand().setCommand(Command.EXPIRY).setKey(getKey(sessionId, keyType)).setExpiryInterval(this.maxInactiveInterval));
                 }
             }
         }

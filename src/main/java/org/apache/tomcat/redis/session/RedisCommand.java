@@ -6,9 +6,9 @@ import java.io.Serializable;
  * Redis Commands needed for the Action Handler
  */
 public class RedisCommand {
-    enum Command {
-        HSET, HGET, HDEL,
-        DEL, SET,
+    public enum Command {
+        DEL,
+        HSET, HDEL,
         EXPIRY
     }
 
@@ -16,6 +16,27 @@ public class RedisCommand {
     private String key;
     private String field;
     private Serializable value;
+    private int expiryInterval;
+
+    public Command getCommand() {
+        return command;
+    }
+
+    public String getKey() {
+        return key;
+    }
+
+    public String getField() {
+        return field;
+    }
+
+    public Serializable getValue() {
+        return value;
+    }
+
+    public int getExpiryInterval() {
+        return expiryInterval;
+    }
 
     public RedisCommand setCommand(Command command) {
         this.command = command;
@@ -37,6 +58,11 @@ public class RedisCommand {
         return this;
     }
 
+    public RedisCommand setExpiryInterval(int expiryInterval) {
+        this.expiryInterval = expiryInterval;
+        return this;
+    }
+
     @Override
     public String toString() {
         return "RedisCommand{" +
@@ -44,6 +70,7 @@ public class RedisCommand {
                 ", key='" + key + '\'' +
                 ", field='" + field + '\'' +
                 ", value=" + value +
+                ", expiryInterval=" + expiryInterval +
                 '}';
     }
 }

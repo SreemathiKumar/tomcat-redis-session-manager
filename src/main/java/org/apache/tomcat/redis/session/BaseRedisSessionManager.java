@@ -1,5 +1,6 @@
 package org.apache.tomcat.redis.session;
 
+import org.apache.catalina.LifecycleException;
 import org.apache.catalina.LifecycleListener;
 import org.apache.catalina.session.ManagerBase;
 import org.apache.catalina.util.LifecycleSupport;
@@ -8,7 +9,7 @@ import org.apache.tomcat.redis.store.RedisStoreManager;
 /**
  *
  */
-abstract class BaseRedisStoreManager extends ManagerBase {
+abstract class BaseRedisSessionManager extends ManagerBase {
     /**
      * The lifecycle event support for this component.
      */
@@ -36,6 +37,10 @@ abstract class BaseRedisStoreManager extends ManagerBase {
 
     public RedisStoreManager getStoreManager() {
         return storeManager;
+    }
+
+    public void setSerializationStrategyClass(String strategy) {
+        this.storeManager.setSerializationStrategyClass(strategy);
     }
 
     public void setHost(String host) {
@@ -209,4 +214,23 @@ abstract class BaseRedisStoreManager extends ManagerBase {
     public void setJmxNamePrefix(String jmxNamePrefix) {
         this.storeManager.getConnectionPoolConfig().setJmxNamePrefix(jmxNamePrefix);
     }
+
+    public void setExecutorPoolSize(int executorPoolSize) {
+        this.storeManager.setExecutorPoolSize(executorPoolSize);
+    }
+
+    @Override
+    protected synchronized void startInternal() throws LifecycleException {
+        super.startInternal();
+
+        this.storeManager.init();
+    }
+
+    @Override
+    protected synchronized void stopInternal() throws LifecycleException {
+        this.storeManager.destroy();
+
+        super.stopInternal();
+    }
+
 }
