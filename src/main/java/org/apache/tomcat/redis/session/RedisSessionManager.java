@@ -1,9 +1,12 @@
 package org.apache.tomcat.redis.session;
 
 import org.apache.catalina.*;
+import org.apache.catalina.connector.Request;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
+import org.apache.tomcat.redis.serializer.SerializationException;
 
+import javax.servlet.http.HttpSession;
 import java.io.IOException;
 
 public class RedisSessionManager extends BaseRedisSessionManager implements Lifecycle {
@@ -74,7 +77,7 @@ public class RedisSessionManager extends BaseRedisSessionManager implements Life
     }
 
     protected synchronized void attachRedisActionHandler() throws LifecycleException {
-        this.actionHandler = new RedisSessionActionHandler(getStoreManager(), getMaxInactiveInterval(), this.maxRegistrySize);
+        this.actionHandler = new RedisSessionActionHandler(this, getMaxInactiveInterval(), this.maxRegistrySize);
     }
 
     @Override
@@ -168,8 +171,23 @@ public class RedisSessionManager extends BaseRedisSessionManager implements Life
     @Override
     public Session findSession(String id) throws IOException {
         if(LOG.isDebugEnabled()) { LOG.debug("Attempting to find session with id " + id); }
-        final Session session = super.findSession(id);
-        return (session instanceof RedisSession) ? session : this.actionHandler.loadSession(id);
+        Session session = super.findSession(id);
+        if(session instanceof RedisSession) {
+            return session;
+        }
+
+        try {
+            if(LOG.isDebugEnabled()) { LOG.debug("Attempting to load session from redis with id " + id); }
+            session = this.actionHandler.loadSession(id);
+        } catch (SerializationException e) {
+            LOG.error("Error loading session from redis", e);
+            throw new IOException(e);
+        }
+
+        if(session != null) {
+            super.add(session);
+        }
+        return session;
     }
 
     @Override
@@ -178,7 +196,18 @@ public class RedisSessionManager extends BaseRedisSessionManager implements Life
         this.actionHandler.flushActions();
     }
 
-    public void postRequest() {
+    public void preRequestProcessing(Request request) {
+        final HttpSession session = request.getSession(false);
+        if(session != null && session.getId() != null) {
+            this.actionHandler.registerSessionAccess(session.getId());
+        }
+    }
+
+    public void postRequestProcessing(Request request) {
+        final HttpSession session = request.getSession(false);
+        if(session != null && session.getId() != null) {
+            this.actionHandler.registerSessionAccess(session.getId());
+        }
         this.actionHandler.flushActions();
     }
 

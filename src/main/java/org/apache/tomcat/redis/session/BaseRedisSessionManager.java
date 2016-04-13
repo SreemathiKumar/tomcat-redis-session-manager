@@ -2,6 +2,7 @@ package org.apache.tomcat.redis.session;
 
 import org.apache.catalina.LifecycleException;
 import org.apache.catalina.LifecycleListener;
+import org.apache.catalina.Loader;
 import org.apache.catalina.session.ManagerBase;
 import org.apache.catalina.util.LifecycleSupport;
 import org.apache.tomcat.redis.store.RedisStoreManager;
@@ -232,6 +233,20 @@ abstract class BaseRedisSessionManager extends ManagerBase {
     protected synchronized void startInternal() throws LifecycleException {
         super.startInternal();
 
+        // Setting the classloader for StoreManager to help in Serialization
+        Loader loader = null;
+
+        if (getContainer() != null) {
+            loader = getContainer().getLoader();
+        }
+
+        ClassLoader classLoader = null;
+
+        if (loader != null) {
+            classLoader = loader.getClassLoader();
+        }
+
+        this.storeManager.setClassLoader(classLoader);
         this.storeManager.init();
     }
 

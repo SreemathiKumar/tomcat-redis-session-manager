@@ -4,11 +4,13 @@ import org.apache.catalina.LifecycleException;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.redis.serializer.ISerializer;
+import org.apache.tomcat.redis.serializer.SerializationException;
 import org.apache.tomcat.redis.session.RedisCommand;
 import org.apache.tomcat.redis.util.StringUtils;
 import redis.clients.jedis.*;
 import redis.clients.util.Pool;
 
+import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -41,6 +43,8 @@ public class RedisStoreManager {
 
     protected ExecutorService[] executors = null;
     protected int executorPoolSize = Runtime.getRuntime().availableProcessors();
+
+    protected ClassLoader classLoader = null;
 
     public String getHost() {
         return host;
@@ -116,13 +120,17 @@ public class RedisStoreManager {
         this.executorPoolSize = executorPoolSize;
     }
 
+    public void setClassLoader(ClassLoader classLoader) {
+        this.classLoader = classLoader;
+    }
+
     public void init() throws LifecycleException {
 
         // Need to ensure that the Commands belonging to the same session
         // are executed serially. Hence creating multiple executors of size 1
         // for different buckets of commands.
         this.executors = new ExecutorService[this.executorPoolSize];
-        for(int i = 0; i<= this.executors.length; i++) {
+        for(int i = 0; i< this.executors.length; i++) {
             this.executors[i] = Executors.newSingleThreadExecutor();
         }
 
@@ -158,7 +166,7 @@ public class RedisStoreManager {
     }
 
     private void shutdownExecutors() {
-        for(int i = 0; i<= this.executors.length; i++) {
+        for(int i = 0; i< this.executors.length; i++) {
             try {
                 if(this.executors[i] != null && !this.executors[i].isShutdown()) {
                     this.executors[i].shutdown();
@@ -170,7 +178,7 @@ public class RedisStoreManager {
     }
 
     private void awaitTermination(long timeout, TimeUnit unit) {
-        for(int i = 0; i<= this.executors.length; i++) {
+        for(int i = 0; i< this.executors.length; i++) {
             try {
                 if(this.executors[i] != null && !this.executors[i].isShutdown()) {
                     this.executors[i].awaitTermination(timeout, unit);
@@ -181,7 +189,7 @@ public class RedisStoreManager {
         }
     }
 
-    public Jedis acquireConnection() {
+    protected Jedis acquireConnection() {
         final Jedis jedis = this.connectionPool.getResource();
 
         if (getDatabase() != 0) {
@@ -191,8 +199,28 @@ public class RedisStoreManager {
         return jedis;
     }
 
-    public void returnConnection(Jedis jedis) {
+    protected void returnConnection(Jedis jedis) {
         jedis.close();
+    }
+
+    public Serializable hset(final String key, final String field, final Serializable value, final boolean overwrite) throws SerializationException {
+        if(key == null || field == null || value == null) {
+            return null;
+        }
+
+        // This has to be synchronous call
+        // Hence getting Jedis instance and operating on it.
+        final Jedis jedis = acquireConnection();
+        try {
+            final String serializedValue = this.serializer.serialize(value);
+            if(overwrite) {
+                jedis.hset(key, field, serializedValue);
+                return value;
+            }
+            return jedis.hsetnx(key, field, serializedValue) == 0L ? null : value;
+        } finally {
+            returnConnection(jedis);
+        }
     }
 
     public void execute(List<RedisCommand> commands) {
@@ -215,10 +243,35 @@ public class RedisStoreManager {
         }
     }
 
+    public Map<String, Serializable> loadData(final String key) throws SerializationException {
+        final Jedis jedis = acquireConnection();
+        try {
+            final Map<String, String> rawData = jedis.hgetAll(key);
+            if(rawData != null && !rawData.isEmpty()) {
+                final Map<String, Serializable> deSerialized = new HashMap<String, Serializable>(rawData.size());
+                for(Map.Entry<String, String> rawEntry : rawData.entrySet()) {
+                    try {
+                        deSerialized.put(rawEntry.getKey(), this.serializer.deSerialize(rawEntry.getValue()));
+                    } catch (SerializationException e) {
+                        // Need the details for better messaging.
+                        throw new SerializationException("Error loading data from redis for key "+ key + " and field "+ rawEntry.getKey(), e);
+                    }
+                }
+                return deSerialized;
+            }
+        } finally {
+            returnConnection(jedis);
+        }
+
+        return null;
+    }
+
     protected ISerializer getSerializer() throws LifecycleException {
         try {
             LOG.info("Instantiating serializer of type " + this.serializationStrategyClass);
-            return (ISerializer) Class.forName(this.serializationStrategyClass).newInstance();
+            ISerializer serializer = (ISerializer) Class.forName(this.serializationStrategyClass).newInstance();
+            serializer.setClassLoader(this.classLoader);
+            return serializer;
         } catch (ClassNotFoundException e) {
             throw new LifecycleException(e);
         } catch (InstantiationException e) {

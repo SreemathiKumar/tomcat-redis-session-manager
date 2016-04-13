@@ -1,5 +1,6 @@
 package org.apache.tomcat.redis.serializer;
 
+import org.apache.catalina.util.CustomObjectInputStream;
 import sun.misc.BASE64Decoder;
 import sun.misc.BASE64Encoder;
 
@@ -12,6 +13,13 @@ public final class JavaSerializer implements ISerializer {
 
     private static final BASE64Encoder ENCODER = new BASE64Encoder();
     private static final BASE64Decoder DECODER = new BASE64Decoder();
+
+    protected ClassLoader classLoader = null;
+
+    @Override
+    public void setClassLoader(ClassLoader classLoader) {
+        this.classLoader = classLoader;
+    }
 
     @Override
     public String serialize(Serializable object) throws SerializationException {
@@ -38,7 +46,7 @@ public final class JavaSerializer implements ISerializer {
         try {
             final InputStream bis = new ByteArrayInputStream(DECODER.decodeBuffer(serializedString));
             try {
-                ObjectInputStream ois = new ObjectInputStream(bis);
+                ObjectInputStream ois = new CustomObjectInputStream(bis, classLoader);
                 try {
                     return (Serializable) ois.readObject();
                 } finally {

@@ -2,7 +2,7 @@ package org.apache.tomcat.redis.serializer;
 
 import java.io.Serializable;
 
-class SerializationException extends Exception implements Serializable {
+public class SerializationException extends Exception implements Serializable {
 
     public SerializationException() {
         super();

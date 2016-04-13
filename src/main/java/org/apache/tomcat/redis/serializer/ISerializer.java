@@ -8,6 +8,12 @@ import java.io.Serializable;
 public interface ISerializer {
 
     /**
+     * Setting the <code>ClassLoader</code> to be used for serialization and de-serialization.
+     * @param classLoader
+     */
+    void setClassLoader(ClassLoader classLoader);
+
+    /**
      * Serialize a <code>Serializable</code> object.
      * @param object Object to be serialized.
      * @return <code>String</code> version of the serialized version of the Object.

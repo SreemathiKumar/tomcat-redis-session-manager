@@ -4,12 +4,14 @@ import org.apache.catalina.LifecycleException;
 import org.apache.catalina.Session;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
+import org.apache.tomcat.redis.serializer.SerializationException;
 import org.apache.tomcat.redis.session.RedisCommand.Command;
 import org.apache.tomcat.redis.store.RedisStoreManager;
 import org.apache.tomcat.redis.util.StringUtils;
 import redis.clients.jedis.Jedis;
 
 import java.io.Serializable;
+import java.security.Principal;
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.locks.Lock;
@@ -47,6 +49,10 @@ public class RedisSessionActionHandler {
     protected final int maxRegistrySize;
     protected final Lock lock;
 
+    /**
+     * Redis Session Manager
+     */
+    protected final RedisSessionManager sessionManager;
 
     /**
      * Redis Store Manager
@@ -58,12 +64,18 @@ public class RedisSessionActionHandler {
      */
     protected final int maxInactiveInterval;
 
-    public RedisSessionActionHandler(final RedisStoreManager storeManager, final int maxInactiveInterval, final int maxRegistrySize) throws LifecycleException {
-        this.storeManager = storeManager;
+    private final ThreadLocal<Boolean> registrationFlag;
+
+    public RedisSessionActionHandler(final RedisSessionManager sessionManager, final int maxInactiveInterval, final int maxRegistrySize) throws LifecycleException {
+        this.sessionManager = sessionManager;
+        this.storeManager = sessionManager.getStoreManager();
         this.maxInactiveInterval = maxInactiveInterval;
         this.registry = new ConcurrentLinkedQueue<RedisCommand>();
         this.lock = new ReentrantLock();
         this.maxRegistrySize = maxRegistrySize;
+
+        this.registrationFlag = new ThreadLocal<Boolean>();
+        this.registrationFlag.set(Boolean.TRUE);
     }
 
     /**
@@ -72,29 +84,20 @@ public class RedisSessionActionHandler {
      * @param requestedSessionId
      * @return requestedSessionId if the session did not exist. Else null if the session with the id already exists.
      */
-    public String regsisterSessionId(String requestedSessionId, boolean overwrite) {
-        if(requestedSessionId == null) {
-            return null;
-        }
-
+    public String regsisterSessionId(final String requestedSessionId, boolean overwrite) {
         final String key = getKey(requestedSessionId, MAIN);
-
-        // This has to be synchronous call
-        // Hence getting Jedis instance and operating on it.
-        final Jedis jedis = this.storeManager.acquireConnection();
         try {
-            if(overwrite) {
-                jedis.hset(key, ID, requestedSessionId);
-                return requestedSessionId;
-            }
-            return jedis.hsetnx(key, ID, requestedSessionId) == 0L ? null : requestedSessionId;
+            return (String) this.storeManager.hset(key, ID, requestedSessionId, overwrite);
+        } catch (SerializationException e) {
+            LOG.error("Error registering session in redis with id "+ requestedSessionId, e);
         } finally {
             registerSessionAccess(requestedSessionId);
-            this.storeManager.returnConnection(jedis);
         }
+
+        return null;
     }
 
-    public void registerSessionPrincipal(RedisSession session) {
+    public void registerSessionPrincipal(final RedisSession session) {
         registerCommand(new RedisCommand(session.getId())
                 .setCommand(session.getPrincipal() == null ? Command.HDEL : Command.HSET)
                 .setKey(getKey(session.getId(), MAIN))
@@ -102,7 +105,7 @@ public class RedisSessionActionHandler {
                 .setValue((Serializable) session.getPrincipal()));
     }
 
-    public void registerSessionCreationTime(RedisSession session) {
+    public void registerSessionCreationTime(final RedisSession session) {
         registerCommand(new RedisCommand(session.getId())
                 .setCommand(Command.HSET)
                 .setKey(getKey(session.getId(), MAIN))
@@ -110,7 +113,7 @@ public class RedisSessionActionHandler {
                 .setValue(session.getCreationTime()));
     }
 
-    public void registerSessionAuthType(RedisSession session) {
+    public void registerSessionAuthType(final RedisSession session) {
         registerCommand(new RedisCommand(session.getId())
                 .setCommand(session.getAuthType() == null ? Command.HDEL : Command.HSET)
                 .setKey(getKey(session.getId(), MAIN))
@@ -118,14 +121,14 @@ public class RedisSessionActionHandler {
                 .setValue(session.getAuthType()));
     }
 
-    public void removeSessionNote(RedisSession session, String name) {
+    public void removeSessionNote(final RedisSession session, final String name) {
         registerCommand(new RedisCommand(session.getId())
                 .setCommand(Command.HDEL)
                 .setKey(getKey(session.getId(), NOTES))
                 .setField(name));
     }
 
-    public void registerSessionNote(RedisSession session, String name, Object value) {
+    public void registerSessionNote(final RedisSession session, final String name, final Object value) {
         registerCommand(new RedisCommand(session.getId())
                 .setCommand(value == null ? Command.HDEL : Command.HSET)
                 .setKey(getKey(session.getId(), NOTES))
@@ -133,14 +136,14 @@ public class RedisSessionActionHandler {
                 .setValue((Serializable) value));
     }
 
-    public void removeSessionAttribute(RedisSession session, String name) {
+    public void removeSessionAttribute(final RedisSession session, final String name) {
         registerCommand(new RedisCommand(session.getId())
                 .setCommand(Command.HDEL)
                 .setKey(getKey(session.getId(), ATTRIBUTES))
                 .setField(name));
     }
 
-    public void registerSessionAttribute(RedisSession session, String name, Object value) {
+    public void registerSessionAttribute(final RedisSession session, final String name, final Object value) {
         registerCommand(new RedisCommand(session.getId())
                 .setCommand(value == null ? Command.HDEL : Command.HSET)
                 .setKey(getKey(session.getId(), ATTRIBUTES))
@@ -148,13 +151,13 @@ public class RedisSessionActionHandler {
                 .setValue((Serializable) value));
     }
 
-    public void removeSession(RedisSession session) {
+    public void removeSession(final RedisSession session) {
         for(String keyType : SESSION_BUCKETS) {
             registerCommand(new RedisCommand(session.getId()).setCommand(Command.DEL).setKey(getKey(session.getId(), keyType)));
         }
     }
 
-    public Session addSession(RedisSession session) {
+    public Session addSession(final RedisSession session) {
         if(session.getId() != null) {
             regsisterSessionId(session.getId(), true);
             registerSessionAccess(session.getId());
@@ -180,9 +183,45 @@ public class RedisSessionActionHandler {
         return session;
     }
 
-    public Session loadSession(String sessionId) {
-        registerSessionAccess(sessionId);
-        // TODO:
+    public Session loadSession(final String sessionId) throws SerializationException {
+        this.registrationFlag.set(Boolean.FALSE); // Temporarily turn off registration for this thread.
+        try {
+            if(sessionId != null) {
+                final Map<String, Serializable> mainMap = this.storeManager.loadData(getKey(sessionId, MAIN));
+                RedisSession session = null;
+                if(LOG.isDebugEnabled()) { LOG.debug("Attempting to load session with id " + sessionId); }
+                if(mainMap != null) {
+                    if(LOG.isDebugEnabled()) { LOG.debug("Successfully loaded session with id " + sessionId); }
+                    session = new RedisSession(this.sessionManager);
+                    session.setValid(true);
+                    session.setId(sessionId);
+                    session.setAuthType((String) mainMap.get(AUTH_TYPE));
+                    session.setPrincipal((Principal) mainMap.get(PRINCIPAL));
+                    session.setCreationTime((Long) mainMap.get(CTIME));
+                }
+
+                if(session != null) {
+                    final Map<String, Serializable> notesMap = this.storeManager.loadData(getKey(sessionId, NOTES));
+                    if(notesMap != null) {
+                        for(Map.Entry<String, Serializable> entry : notesMap.entrySet()) {
+                            session.setNote(entry.getKey(), entry.getValue());
+                        }
+                    }
+
+                    final Map<String, Serializable> attributesMap = this.storeManager.loadData(getKey(sessionId, ATTRIBUTES));
+                    if(attributesMap != null) {
+                        for(Map.Entry<String, Serializable> entry : attributesMap.entrySet()) {
+                            session.setAttribute(entry.getKey(), entry.getValue());
+                        }
+                    }
+
+                    registerSessionAccess(sessionId);
+                }
+            }
+        } finally {
+            this.registrationFlag.set(Boolean.TRUE);
+        }
+
         return null;
     }
 
@@ -206,21 +245,25 @@ public class RedisSessionActionHandler {
         }
     }
 
-    protected void registerCommand(RedisCommand command) {
-        this.registry.offer(command);
+    protected void registerCommand(final RedisCommand command) {
+        // If the registrationFlag is not set or if it set as true, proceed with registration.
+        if((this.registrationFlag.get() == null || this.registrationFlag.get())
+                && command.getSessionId() != null) {
+            this.registry.offer(command);
 
-        if(this.registry.size() > this.maxRegistrySize) {
-            flushActions();
+            if(this.registry.size() > this.maxRegistrySize) {
+                flushActions();
+            }
         }
     }
 
-    protected void registerSessionAccess(final String sessionId) {
+    public void registerSessionAccess(final String sessionId) {
         for(String keyType : SESSION_BUCKETS) {
             this.registry.add(new RedisCommand(sessionId).setCommand(Command.EXPIRY).setKey(getKey(sessionId, keyType)).setExpiryInterval(this.maxInactiveInterval));
         }
     }
 
-    private String getKey(String sessionId, String bucketType) {
+    private String getKey(final String sessionId, final String bucketType) {
         return (SESSION_BUCKETS.contains(bucketType)) ?  StringUtils.join(Arrays.asList(SESSION, bucketType, sessionId), COLON) : null;
     }
 }
