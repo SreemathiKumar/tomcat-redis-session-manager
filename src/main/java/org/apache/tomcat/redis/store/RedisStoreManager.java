@@ -166,10 +166,10 @@ public class RedisStoreManager {
     }
 
     private void shutdownExecutors() {
-        for(int i = 0; i< this.executors.length; i++) {
+        for (ExecutorService executor : this.executors) {
             try {
-                if(this.executors[i] != null && !this.executors[i].isShutdown()) {
-                    this.executors[i].shutdown();
+                if (executor != null && !executor.isShutdown()) {
+                    executor.shutdown();
                 }
             } catch (Exception e) {
                 // Do nothing to prevent anything untoward from happening
@@ -178,10 +178,10 @@ public class RedisStoreManager {
     }
 
     private void awaitTermination(long timeout, TimeUnit unit) {
-        for(int i = 0; i< this.executors.length; i++) {
+        for (ExecutorService executor : this.executors) {
             try {
-                if(this.executors[i] != null && !this.executors[i].isShutdown()) {
-                    this.executors[i].awaitTermination(timeout, unit);
+                if (executor != null && !executor.isShutdown()) {
+                    executor.awaitTermination(timeout, unit);
                 }
             } catch (Exception e) {
                 // Do nothing to prevent anything untoward from happening

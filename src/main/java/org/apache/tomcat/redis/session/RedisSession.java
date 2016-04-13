@@ -5,7 +5,10 @@ import org.apache.catalina.session.StandardSession;
 import java.io.Serializable;
 import java.security.Principal;
 
-
+/**
+ * RedisSession which has the required hook to register <code>RedisCommand</code>s whenever any activity is happening on the <code>Session</code>.
+ * It is not required for the <code>Session</code> object to be manipulated only by the web request thread.
+ */
 class RedisSession extends StandardSession {
 
   protected RedisSessionActionHandler actionHandler = null;
@@ -88,6 +91,10 @@ class RedisSession extends StandardSession {
     return "RedisSession[" + id + "]";
   }
 
+  /**
+   * It is mandatory that all the values are <code>Serializable</code>. This method ensures this.
+   * @param obj <code>Object</code> that is being asserted as <code>Serializable</code>.
+   */
   private void assertSerializable(Object obj) {
     if (obj != null && !(obj instanceof Serializable)) {
       throw new IllegalArgumentException("Value registered in session has to be serializable and so should implement java.io.Serialiable.");

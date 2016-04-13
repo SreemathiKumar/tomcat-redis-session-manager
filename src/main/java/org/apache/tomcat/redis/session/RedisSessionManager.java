@@ -9,6 +9,9 @@ import org.apache.tomcat.redis.serializer.SerializationException;
 import javax.servlet.http.HttpSession;
 import java.io.IOException;
 
+/**
+ * Redis session manager.
+ */
 public class RedisSessionManager extends BaseRedisSessionManager implements Lifecycle {
 
     private static final Log LOG = LogFactory.getLog(RedisSessionManager.class);
@@ -102,6 +105,13 @@ public class RedisSessionManager extends BaseRedisSessionManager implements Life
         super.stopInternal();
     }
 
+    /**
+     * Sometimes the generated <code>Session</code> identifier does not contain the JVMRoute.
+     * This method completes the <code>Session</code> identifier if required to.
+     *
+     * @param sessionId <code>Session</code> identifier.
+     * @return Complete <code>Session</code> identifier.
+     */
     protected String getCompletedSessionId(String sessionId) {
         final String jvmRoute = getJvmRoute();
         if (jvmRoute != null) {
@@ -111,6 +121,12 @@ public class RedisSessionManager extends BaseRedisSessionManager implements Life
         return sessionId;
     }
 
+    /**
+     * Registers the <code>Session</code> identifier in redis. This operation is expected to be synchronous to ensure registration in redis.
+     *
+     * @param requestedSessionId <code>Session</code> identifier requested for registration.
+     * @return Completed requestedSessionId if registraion is successful. null otherwise.
+     */
     private String _registerSessionId(String requestedSessionId) {
         return (requestedSessionId != null) ? this.actionHandler.regsisterSessionId(getCompletedSessionId(requestedSessionId), false) : null;
     }
@@ -196,6 +212,11 @@ public class RedisSessionManager extends BaseRedisSessionManager implements Life
         this.actionHandler.flushActions();
     }
 
+    /**
+     * Method to be executed before a request is to be processed.
+     *
+     * @param request <code>Request</code> object before processing.
+     */
     public void preRequestProcessing(Request request) {
         final HttpSession session = request.getSession(false);
         if(session != null && session.getId() != null) {
@@ -203,6 +224,11 @@ public class RedisSessionManager extends BaseRedisSessionManager implements Life
         }
     }
 
+    /**
+     * Method to be executed after a request is processed.
+     *
+     * @param request <code>Request</code> object after processing.
+     */
     public void postRequestProcessing(Request request) {
         final HttpSession session = request.getSession(false);
         if(session != null && session.getId() != null) {

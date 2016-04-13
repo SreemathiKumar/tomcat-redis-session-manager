@@ -8,7 +8,7 @@ import org.apache.catalina.util.LifecycleSupport;
 import org.apache.tomcat.redis.store.RedisStoreManager;
 
 /**
- *
+ * Base Class for RedisSession Manager. Takes care of initlizing the RedisStoreManager and LifeCycleSupport needed by RedisSessionManager.
  */
 abstract class BaseRedisSessionManager extends ManagerBase {
     /**

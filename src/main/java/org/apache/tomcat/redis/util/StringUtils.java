@@ -3,7 +3,7 @@ package org.apache.tomcat.redis.util;
 import java.util.*;
 
 /**
- * Created by vijay on 11/4/16.
+ * StringUtils for utility methods
  */
 public class StringUtils {
 

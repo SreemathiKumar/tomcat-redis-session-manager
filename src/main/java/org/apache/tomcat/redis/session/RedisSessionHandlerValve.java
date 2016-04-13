@@ -7,10 +7,16 @@ import org.apache.catalina.valves.ValveBase;
 import javax.servlet.ServletException;
 import java.io.IOException;
 
-
+/**
+ * This <code>ValveBase</code> implementation ensures that the request processing is taken care of in the redis for any session access.
+ */
 public class RedisSessionHandlerValve extends ValveBase {
     private RedisSessionManager manager;
 
+    /**
+     * Sets <code>RedisSessionManager</code>
+     * @param manager The <code>RedisSessionManager</code> to be set.
+     */
     public void setRedisSessionManager(RedisSessionManager manager) {
         this.manager = manager;
     }
