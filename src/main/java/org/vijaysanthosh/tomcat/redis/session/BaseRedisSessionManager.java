@@ -1,11 +1,11 @@
-package org.apache.tomcat.redis.session;
+package org.vijaysanthosh.tomcat.redis.session;
 
 import org.apache.catalina.LifecycleException;
 import org.apache.catalina.LifecycleListener;
 import org.apache.catalina.Loader;
 import org.apache.catalina.session.ManagerBase;
 import org.apache.catalina.util.LifecycleSupport;
-import org.apache.tomcat.redis.store.RedisStoreManager;
+import org.vijaysanthosh.tomcat.redis.store.RedisStoreManager;
 
 /**
  * Base Class for RedisSession Manager. Takes care of initlizing the RedisStoreManager and LifeCycleSupport needed by RedisSessionManager.

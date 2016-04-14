@@ -1,12 +1,12 @@
-package org.apache.tomcat.redis.store;
+package org.vijaysanthosh.tomcat.redis.store;
 
 import org.apache.catalina.LifecycleException;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
-import org.apache.tomcat.redis.serializer.ISerializer;
-import org.apache.tomcat.redis.serializer.SerializationException;
-import org.apache.tomcat.redis.session.RedisCommand;
-import org.apache.tomcat.redis.util.StringUtils;
+import org.vijaysanthosh.tomcat.redis.serializer.ISerializer;
+import org.vijaysanthosh.tomcat.redis.serializer.SerializationException;
+import org.vijaysanthosh.tomcat.redis.session.RedisCommand;
+import org.vijaysanthosh.tomcat.redis.util.StringUtils;
 import redis.clients.jedis.*;
 import redis.clients.util.Pool;
 
@@ -26,7 +26,7 @@ public class RedisStoreManager {
      * Serializer initialization
      */
     protected ISerializer serializer;
-    protected String serializationStrategyClass = "org.apache.tomcat.redis.serializer.JavaSerializer";
+    protected String serializationStrategyClass = "org.vijaysanthosh.tomcat.redis.serializer.JavaSerializer";
 
     protected String host = "localhost";
     protected int port = 6379;

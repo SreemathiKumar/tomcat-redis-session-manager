@@ -1,13 +1,13 @@
-package org.apache.tomcat.redis.session;
+package org.vijaysanthosh.tomcat.redis.session;
 
 import org.apache.catalina.LifecycleException;
 import org.apache.catalina.Session;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
-import org.apache.tomcat.redis.serializer.SerializationException;
-import org.apache.tomcat.redis.session.RedisCommand.Command;
-import org.apache.tomcat.redis.store.RedisStoreManager;
-import org.apache.tomcat.redis.util.StringUtils;
+import org.vijaysanthosh.tomcat.redis.serializer.SerializationException;
+import org.vijaysanthosh.tomcat.redis.session.RedisCommand.Command;
+import org.vijaysanthosh.tomcat.redis.store.RedisStoreManager;
+import org.vijaysanthosh.tomcat.redis.util.StringUtils;
 
 import java.io.Serializable;
 import java.security.Principal;

@@ -1,8 +1,8 @@
-package org.apache.tomcat.redis.serializer;
+package org.vijaysanthosh.tomcat.redis.serializer;
 
 import junit.framework.TestCase;
-import org.apache.tomcat.redis.serializer.model.SampleEntry;
-import org.apache.tomcat.redis.serializer.model.SimpleEntry;
+import org.vijaysanthosh.tomcat.redis.serializer.model.SampleEntry;
+import org.vijaysanthosh.tomcat.redis.serializer.model.SimpleEntry;
 
 import java.io.Serializable;
 import java.util.Arrays;

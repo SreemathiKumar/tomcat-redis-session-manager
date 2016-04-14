@@ -1,4 +1,4 @@
-package org.apache.tomcat.redis.serializer;
+package org.vijaysanthosh.tomcat.redis.serializer;
 
 import java.io.Serializable;
 

@@ -1,4 +1,4 @@
-package org.apache.tomcat.redis.session;
+package org.vijaysanthosh.tomcat.redis.session;
 
 import java.io.Serializable;
 

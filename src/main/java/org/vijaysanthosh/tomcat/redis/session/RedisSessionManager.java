@@ -1,10 +1,10 @@
-package org.apache.tomcat.redis.session;
+package org.vijaysanthosh.tomcat.redis.session;
 
 import org.apache.catalina.*;
 import org.apache.catalina.connector.Request;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
-import org.apache.tomcat.redis.serializer.SerializationException;
+import org.vijaysanthosh.tomcat.redis.serializer.SerializationException;
 
 import javax.servlet.http.HttpSession;
 import java.io.IOException;
@@ -16,7 +16,6 @@ public class RedisSessionManager extends BaseRedisSessionManager implements Life
 
     private static final Log LOG = LogFactory.getLog(RedisSessionManager.class);
 
-    protected static final String info = "RedisSessionManager/1.0";
     protected static String name = "RedisSessionManager";
 
     /**
@@ -31,11 +30,6 @@ public class RedisSessionManager extends BaseRedisSessionManager implements Life
 
     public RedisSessionActionHandler getActionHandler() {
         return actionHandler;
-    }
-
-    @Override
-    public String getInfo() {
-        return (info);
     }
 
     @Override

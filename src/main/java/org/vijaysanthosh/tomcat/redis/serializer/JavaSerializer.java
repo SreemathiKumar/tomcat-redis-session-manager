@@ -1,4 +1,4 @@
-package org.apache.tomcat.redis.serializer;
+package org.vijaysanthosh.tomcat.redis.serializer;
 
 import org.apache.catalina.util.CustomObjectInputStream;
 import sun.misc.BASE64Decoder;

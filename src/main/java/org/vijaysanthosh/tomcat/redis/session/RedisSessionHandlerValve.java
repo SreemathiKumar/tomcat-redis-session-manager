@@ -1,4 +1,4 @@
-package org.apache.tomcat.redis.session;
+package org.vijaysanthosh.tomcat.redis.session;
 
 import org.apache.catalina.connector.Request;
 import org.apache.catalina.connector.Response;

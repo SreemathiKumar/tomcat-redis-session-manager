@@ -1,4 +1,4 @@
-package org.apache.tomcat.redis.serializer.model;
+package org.vijaysanthosh.tomcat.redis.serializer.model;
 
 import javax.xml.bind.annotation.XmlElement;
 import javax.xml.bind.annotation.XmlRootElement;

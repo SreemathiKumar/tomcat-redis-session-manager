@@ -1,4 +1,4 @@
-package org.apache.tomcat.redis.util;
+package org.vijaysanthosh.tomcat.redis.util;
 
 import junit.framework.TestCase;
 
