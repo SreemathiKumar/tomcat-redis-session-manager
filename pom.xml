@@ -4,7 +4,7 @@
 
     <groupId>org.vijaysanthosh.tomcat.redis</groupId>
     <artifactId>session-manager</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>7.0.1</version>
     <packaging>jar</packaging>
 
     <name>session-manager</name>
